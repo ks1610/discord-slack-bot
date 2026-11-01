@@ -100,6 +100,9 @@ def handle_notification():
     except Exception as e:
         print(f"System Error: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
-
+@app.route('/', methods=['GET'])
+def home():
+    return "Server Bot đang hoạt động bình thường!", 200
+    
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
