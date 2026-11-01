@@ -344,19 +344,17 @@ def handle_notification():
         timestamp = data.get("timestamp", "N/A")
         raw_title = data.get("title", "Notification")
         raw_text = data.get("text", "")
+        
+        ignored_titles = ["chat heads active", "messenger", "system"]
+        ignored_texts = ["start a conversation", "active now", "bong bóng chat đang hoạt động"]
 
-        if not raw_text.strip():
+        if raw_title.lower().strip() in ignored_titles or raw_text.lower().strip() in ignored_texts:
+            print(f"Ignored system notification: Title='{raw_title}', Text='{raw_text}'")
+            return jsonify({"status": "ignored system notification"}), 200
 
-            print("Received notification with empty text")
-
-            return jsonify({
-                "status": "empty text"
-            }), 200
-
-        print(
-            f"Received notification: "
-            f"Title='{raw_title}'"
-        )
+        if not raw_text.strip() or len(raw_text.strip()) < 5:
+            print("Received empty or too short notification text")
+            return jsonify({"status": "text too short"}), 200
 
         # Parse sender and channel
         sender, channel = parse_notification_title(raw_title)
