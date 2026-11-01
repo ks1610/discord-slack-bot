@@ -127,8 +127,15 @@ def parse_notification_title(raw_title):
 # 3. OPENROUTER API
 # =====================================================
 
-def summarize_notification(raw_text):
+# Danh sách các model miễn phí ưu tiên (Chạy từ trên xuống dưới)
+FREE_MODELS = [
+    "nvidia/nemotron-3-ultra-550b-a55b:free",
+    "google/gemma-2-9b-it:free",
+    "meta-llama/llama-3.1-8b-instruct:free",
+    "openrouter/free"  # Tự động chọn model free khả dụng nhất lúc đó
+]
 
+def summarize_notification(raw_text):
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -136,34 +143,45 @@ def summarize_notification(raw_text):
         "X-Title": "Notification Summarizer Bot"
     }
 
-    payload = {
-        "model": MODEL_ID,
-        "messages": [
-            {
-                "role": "system",
-                "content": SYSTEM_PROMPT
-            },
-            {
-                "role": "user",
-                "content": build_user_prompt(raw_text)
-            }
-        ],
-        "temperature": 0.2,
-        "max_tokens": 1200
-    }
+    last_error = None
 
-    response = requests.post(
-        OPENROUTER_URL,
-        headers=headers,
-        json=payload,
-        timeout=45
-    )
+    # Vòng lặp thử qua từng Model nếu gặp lỗi Rate Limit (429)
+    for model_name in FREE_MODELS:
+        payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": build_user_prompt(raw_text)}
+            ],
+            "temperature": 0.2,
+            "max_tokens": 1200
+        }
 
-    response.raise_for_status()
+        try:
+            print(f"Attempting summarization with model: {model_name}")
+            response = requests.post(
+                OPENROUTER_URL,
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
 
-    result = response.json()
+            # Nếu bị Rate Limit (429) hoặc Server Error (5xx), thử model tiếp theo
+            if response.status_code in [429, 500, 502, 503, 504]:
+                print(f"Model {model_name} returned status {response.status_code}. Trying fallback...")
+                continue
 
-    return result["choices"][0]["message"]["content"].strip()
+            response.raise_for_status()
+            result = response.json()
+            return result["choices"][0]["message"]["content"].strip()
+
+        except Exception as err:
+            last_error = err
+            print(f"Error with model {model_name}: {err}")
+            continue
+
+    # Nếu tất cả model đều lỗi, raise ngoại lệ cuối cùng
+    raise last_error or RuntimeError("All fallback models failed")
 
 
 # =====================================================
@@ -344,7 +362,7 @@ def handle_notification():
         timestamp = data.get("timestamp", "N/A")
         raw_title = data.get("title", "Notification")
         raw_text = data.get("text", "")
-        
+
         ignored_titles = ["chat heads active", "messenger", "system"]
         ignored_texts = ["start a conversation", "active now", "bong bóng chat đang hoạt động"]
 
