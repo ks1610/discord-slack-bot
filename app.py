@@ -2,6 +2,7 @@
 import os
 import re
 import requests
+import time
 
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
@@ -127,12 +128,14 @@ def parse_notification_title(raw_title):
 # 3. OPENROUTER API
 # =====================================================
 
-# Danh sách các model miễn phí ưu tiên (Chạy từ trên xuống dưới)
+# Danh sách Model ID hoàn toàn chính xác trên OpenRouter
 FREE_MODELS = [
     "nvidia/nemotron-3-ultra-550b-a55b:free",
-    "google/gemma-2-9b-it:free",
-    "meta-llama/llama-3.1-8b-instruct:free",
-    "openrouter/free"  # Tự động chọn model free khả dụng nhất lúc đó
+    "google/gemma-2-27b-it:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "qwen/qwen-2.5-72b-instruct:free",
+    "mistralai/mistral-7b-instruct:free",
+    "openrouter/auto"  # Tự động chọn model khả dụng
 ]
 
 def summarize_notification(raw_text):
@@ -145,7 +148,6 @@ def summarize_notification(raw_text):
 
     last_error = None
 
-    # Vòng lặp thử qua từng Model nếu gặp lỗi Rate Limit (429)
     for model_name in FREE_MODELS:
         payload = {
             "model": model_name,
@@ -166,9 +168,15 @@ def summarize_notification(raw_text):
                 timeout=30
             )
 
-            # Nếu bị Rate Limit (429) hoặc Server Error (5xx), thử model tiếp theo
+            # Nếu bị Rate Limit (429) hoặc lỗi Server, chờ 1 giây rồi chuyển model
             if response.status_code in [429, 500, 502, 503, 504]:
-                print(f"Model {model_name} returned status {response.status_code}. Trying fallback...")
+                print(f"Model {model_name} returned status {response.status_code}. Retrying next model in 1s...")
+                time.sleep(1)
+                continue
+
+            # Nếu bị lỗi 404 (sai ID), lập tức bỏ qua sang model kế tiếp
+            if response.status_code == 404:
+                print(f"Model {model_name} not found (404). Skipping...")
                 continue
 
             response.raise_for_status()
@@ -180,9 +188,7 @@ def summarize_notification(raw_text):
             print(f"Error with model {model_name}: {err}")
             continue
 
-    # Nếu tất cả model đều lỗi, raise ngoại lệ cuối cùng
     raise last_error or RuntimeError("All fallback models failed")
-
 
 # =====================================================
 # 4. DISCORD EMBED FORMATTING
