@@ -15,7 +15,7 @@ MODEL_ID = "nvidia/nemotron-3-ultra-550b-a55b:free"
 
 @app.route('/', methods=['GET'])
 def home():
-    return "Slack & Messenger Summarizer Bot is Running!", 200
+    return "Notification Summarizer Bot is Running!", 200
 
 @app.route('/slack-notify', methods=['POST'])
 def handle_notification():
@@ -25,18 +25,20 @@ def handle_notification():
             return jsonify({"status": "no data"}), 400
 
         timestamp = data.get("timestamp", "N/A")
-        raw_title = data.get("title", "")
+        raw_title = data.get("title", "Thông báo")
         raw_text = data.get("text", "")
 
-        # Nếu không có nội dung thực tế (hoặc dính biến chưa parse) thì bỏ qua
-        if not raw_text or raw_text.startswith("[notif_") or raw_text.startswith("{notif_"):
-            return jsonify({"status": "invalid text"}), 200
+        # Chỉ ngắt nếu hoàn toàn không có nội dung text
+        if not raw_text:
+            print("Nhận request nhưng raw_text bị rỗng")
+            return jsonify({"status": "empty text"}), 200
 
-        # Phân tích Title (Hỗ trợ cả Slack & Messenger)
+        print(f"Đã nhận tin nhắn thành công: Title='{raw_title}' - Text='{raw_text}'")
+
+        # Phân tích Title (Hỗ trợ Slack, Messenger)
         sender = raw_title
         channel = "Messenger Chat"
         
-        # Dành cho Slack: "Nguyen Van A in #general"
         if " in #" in raw_title:
             parts = raw_title.split(" in #")
             sender = parts[0]
@@ -75,10 +77,10 @@ def handle_notification():
             res_data = response.json()
             summarized_text = res_data['choices'][0]['message']['content'].strip()
         else:
-            print(f"OpenRouter API Error: {response.status_code} - {response.text}")
+            print(f"Lỗi OpenRouter API: {response.status_code} - {response.text}")
             summarized_text = raw_text
 
-        # 2. Gửi về Discord Embed
+        # 2. Định dạng Embed và gửi sang Discord Webhook
         discord_payload = {
             "username": "Message Summarizer",
             "embeds": [
@@ -98,7 +100,10 @@ def handle_notification():
         }
 
         if DISCORD_WEBHOOK_URL:
-            requests.post(DISCORD_WEBHOOK_URL, json=discord_payload)
+            res_discord = requests.post(DISCORD_WEBHOOK_URL, json=discord_payload)
+            print(f"Kết quả gửi Discord: {res_discord.status_code}")
+        else:
+            print("Lỗi: Chưa cấu hình DISCORD_WEBHOOK_URL")
 
         return jsonify({"status": "success"}), 200
 
